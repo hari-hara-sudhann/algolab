@@ -2,6 +2,10 @@ package com.dsaplayground;
 
 import java.io.IOException;
 
+import com.dsaplayground.execution.JavaExecutionService;
+import com.dsaplayground.execution.Marker;
+import com.dsaplayground.execution.TestCaseResult;
+import com.dsaplayground.service.EnvFileLoader;
 import com.dsaplayground.service.FsService;
 import com.dsaplayground.service.StartupBanner;
 import org.slf4j.Logger;
@@ -11,6 +15,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.event.ApplicationStartingEvent;
 import org.springframework.context.ApplicationContext;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MutablePropertySources;
@@ -18,6 +23,7 @@ import org.springframework.core.env.PropertySource;
 import org.springframework.core.annotation.Order;
 
 @SpringBootApplication
+@RegisterReflectionForBinding({TestCaseResult.class, Marker.class, FsService.Entry.class})
 public class DsaPlaygroundApplication {
 
     private static final Logger log = LoggerFactory.getLogger(DsaPlaygroundApplication.class);
@@ -25,6 +31,11 @@ public class DsaPlaygroundApplication {
     public static void main(String[] args) {
         long mainStart = System.currentTimeMillis();
         log.trace("main() entry; args={} ({})", args == null ? "null" : args.length, join(args));
+
+        // Load <working dir>/.env (Judge0 config, ports, …) before the Spring
+        // context starts so every bean can read it via the Env helper. Real
+        // shell-exported variables always win over .env values.
+        EnvFileLoader.loadFromWorkingDirectory();
 
         SpringApplication app = new SpringApplication(DsaPlaygroundApplication.class);
         // Add listener that draws the banner once the app is ready to serve requests
@@ -79,13 +90,11 @@ public class DsaPlaygroundApplication {
             try {
                 ApplicationContext ctx = event.getApplicationContext();
                 FsService fs = ctx.getBean(FsService.class);
-                com.dsaplayground.service.JdkManager jdkMgr
-                        = ctx.getBean(com.dsaplayground.service.JdkManager.class);
+                JavaExecutionService executionService
+                        = ctx.getBean(JavaExecutionService.class);
                 String port = ctx.getEnvironment().getProperty("server.port", "8080");
-                String jdkDesc = "" + jdkMgr.defaultInstallation().version()
-                        + " (" + jdkMgr.defaultInstallation().name() + ", " + jdkMgr.defaultInstallation().home() + ")";
                 StartupBanner banner = new StartupBanner();
-                banner.draw(fs.root().toString(), jdkDesc,
+                banner.draw(fs.root().toString(), executionService.modeLabel(),
                         "http://localhost:" + port + "/", "ready", 0);
                 log.info("Startup banner refreshed on ApplicationReadyEvent");
             } catch (Exception e) {

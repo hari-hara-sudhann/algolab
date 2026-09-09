@@ -63,7 +63,7 @@ public class JdkManager {
                 System.getProperty("java.home", "(none)"),
                 System.getenv("JAVA_HOME") == null ? "(none)" : System.getenv("JAVA_HOME"));
 
-        String envJavaHome = System.getenv("JAVA_HOME");
+        String envJavaHome = Env.get("JAVA_HOME");
         log.trace("JdkManager.<init>(): JAVA_HOME env={}", envJavaHome == null ? "(none)" : envJavaHome);
         if (notBlank(envJavaHome)) {
             log.trace("JdkManager.<init>(): adding JAVA_HOME probe: {}", envJavaHome);
@@ -203,12 +203,18 @@ public class JdkManager {
         }
         // Default = the first usable JDK in probe order (JAVA_HOME, this app's own
         // runtime, macOS default, PATH…) — i.e. what plain `java` would use.
-        this.defaultInstallation = found.values().stream().findFirst()
-                .orElseGet(JdkManager::fallbackInstallation);
-        log.trace("JdkManager.<init>(): default installation: name={} version={} home={}",
-                defaultInstallation.name(), defaultInstallation.version(), defaultInstallation.home());
-        log.info("Discovered {} JDK(s); default: {} (Java {})",
-                installations.size(), defaultInstallation.name(), defaultInstallation.version());
+        // Null when no usable JDK exists on this machine; the execution layer
+        // treats that as "fall back to Judge0".
+        this.defaultInstallation = found.values().stream().findFirst().orElse(null);
+        if (defaultInstallation == null) {
+            log.warn("JdkManager: no usable JDK found on this machine — local execution unavailable");
+        } else {
+            log.trace("JdkManager.<init>(): default installation: name={} version={} home={}",
+                    defaultInstallation.name(), defaultInstallation.version(), defaultInstallation.home());
+        }
+        log.info("Discovered {} JDK(s); default: {}", installations.size(),
+                defaultInstallation == null ? "none"
+                        : defaultInstallation.name() + " (Java " + defaultInstallation.version() + ")");
         log.trace("JdkManager.<init>() EXIT in {} ms", (System.nanoTime() - ctorStart) / 1_000_000);
     }
 
@@ -218,14 +224,23 @@ public class JdkManager {
         return installations;
     }
 
-    /** The JDK this app itself prefers (JAVA_HOME / own runtime / mac default). */
-    public JdkInstallation defaultInstallation() {
-        log.trace("JdkManager.defaultInstallation() -> {} (Java {})", defaultInstallation.name(), defaultInstallation.version());
-        return defaultInstallation;
+    /**
+     * The JDK this app itself prefers (JAVA_HOME / own runtime / mac default),
+     * or empty when no usable JDK exists on this machine.
+     */
+    public Optional<JdkInstallation> defaultInstallation() {
+        log.trace("JdkManager.defaultInstallation() -> {}",
+                defaultInstallation == null ? "none" : defaultInstallation);
+        return Optional.ofNullable(defaultInstallation);
     }
 
-    /** Resolve a client-supplied home path to an installation, falling back to the default. */
-    public JdkInstallation requireInstallation(String home) {
+    /**
+     * Resolve a client-supplied home path to an installation. A blank or
+     * unknown home falls back to the default JDK; empty is returned only when
+     * no usable JDK exists at all (the execution layer then falls back to
+     * Judge0).
+     */
+    public Optional<JdkInstallation> requireInstallation(String home) {
         log.trace("JdkManager.requireInstallation(home={}) ENTRY", home == null ? "null" : home);
         if (home != null && !home.isBlank()) {
             log.trace("JdkManager.requireInstallation(): looking up explicit home: {}", home);
@@ -236,7 +251,7 @@ public class JdkManager {
                         inst.home(), inst.home().equals(normalized));
                 if (inst.home().equals(normalized)) {
                     log.trace("JdkManager.requireInstallation() -> matched: {} (Java {})", inst.name(), inst.version());
-                    return inst;
+                    return Optional.of(inst);
                 }
             }
             log.warn("Unknown JDK home '{}', falling back to default", home);
@@ -244,8 +259,9 @@ public class JdkManager {
         } else {
             log.trace("JdkManager.requireInstallation(): home is blank/null; using default");
         }
-        log.trace("JdkManager.requireInstallation() -> default: {} (Java {})", defaultInstallation.name(), defaultInstallation.version());
-        return defaultInstallation;
+        log.trace("JdkManager.requireInstallation() -> default: {}",
+                defaultInstallation == null ? "none" : defaultInstallation);
+        return Optional.ofNullable(defaultInstallation);
     }
 
     /** Language levels this JDK can compile for, newest first (e.g. 21, 17, 11, 8). */
@@ -517,26 +533,6 @@ public class JdkManager {
         }
         log.trace("JdkManager.pathJavacHome() -> empty (no javac on PATH)");
         return Optional.empty();
-    }
-
-    private static JdkInstallation fallbackInstallation() {
-        log.trace("JdkManager.fallbackInstallation() ENTRY");
-        Path java = Path.of(exe("java")).toAbsolutePath();
-        Path javac = Path.of(exe("javac")).toAbsolutePath();
-        int version = Runtime.version().feature();
-        String javaHome = System.getProperty("java.home");
-        log.trace("JdkManager.fallbackInstallation(): java={} javac={} version={} javaHome={}",
-                java, javac, version, javaHome);
-        JdkInstallation inst = new JdkInstallation(
-                javaHome,
-                java,
-                javac,
-                version,
-                "system-java",
-                "",
-                levelsFor(version));
-        log.trace("JdkManager.fallbackInstallation() -> name={} version={} home={}", inst.name(), inst.version(), inst.home());
-        return inst;
     }
 
     private static String exe(String name) {

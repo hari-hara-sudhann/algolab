@@ -10,56 +10,96 @@ not a competitive-programming platform.
 ## Quick start
 
 ```bash
-./dsa-playground                    # workspace = current directory
-./dsa-playground ~/DSA              # workspace = ~/DSA
-./dsa-playground ~/DSA/merge-sort.dsa   # workspace = file's folder, file opens in the editor
-./dsa-playground --no-browser       # start without opening a browser tab
-./dsa-playground --rebuild          # force a Maven rebuild
+./algolab                       # native macOS build; workspace = current directory
+./algolab ~/DSA                 # workspace = ~/DSA
+./algolab ~/DSA/merge-sort.algolab   # workspace = file's folder, file opens in the editor
+
+# Or run the plain JVM jar (needs JDK 17+ / Maven 3.9+ for the first build):
+mvn -q -DskipTests package
+java -jar target/dsa-playground-0.1.0.jar
 ```
 
-Requirements: JDK 17+ (built against 21), Maven 3.9+. The first run compiles the jar;
-the app needs internet for its CDN assets (Tailwind, Monaco Editor).
+The app picks a free localhost port, starts, opens the browser, and runs in the
+foreground — Ctrl+C stops the server. It needs internet only for its CDN assets
+(Tailwind, Monaco Editor) and, when no local JDK exists, for Judge0.
 
-The script picks a free localhost port, starts Spring Boot, opens the browser, and runs
-in the foreground — Ctrl+C stops the server.
+## How Java execution works
 
-## What's in this build (UI-only)
+AlgoLab is **local-first**: it prefers running your code with a JDK discovered on
+your machine (offline, private, instant), and treats that as the normal case.
 
-- **Spring Boot backend** serving the static frontend plus a small file-manager API.
-  No compile/run/test logic yet — `POST /api/run` is a documented stub (HTTP 501).
+- **Local JDK (default).** `JdkManager` discovers JDKs from `JAVA_HOME`, the app's own
+  runtime, macOS `/usr/libexec/java_home -V` + `~/Library/Java/JavaVirtualMachines` and
+  `/Library/Java/JavaVirtualMachines`, Linux `/usr/lib/jvm` + SDKMAN, Windows
+  `ProgramFiles\Java` + Eclipse Adoptium, and `PATH`. Code is compiled with the
+  machine's own `javac` (honouring the `--release` level chosen in the UI) and run as a
+  local subprocess with stdin piped in — fully offline.
+- **Judge0 fallback.** Only when *no* usable local JDK exists does the app fall back to
+  the [Judge0](https://judge0.com) API, so users without a JDK can still run Java. All
+  Judge0 details (batch submission, polling, the `Main.java` class-name requirement) are
+  isolated in `Judge0Executor` — the rest of the app just asks to "run Java" and receives
+  structured results.
+
+The two mechanisms are interchangeable behind `JavaExecutionService`; the UI shows a
+small status-badge (Local JDK / Judge0 / No executor) so it's always clear where code
+ran, without making execution mode a feature you have to care about.
+
+### Judge0 configuration
+
+Copy the template and fill in values — see [`.env.example`](.env.example):
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `JUDGE0_API_URL` | Judge0 base URL (`https://ce.judge0.com` public CE, or a self-hosted instance) | `https://ce.judge0.com` |
+| `JUDGE0_API_KEY` | Optional credential; blank = no auth header | unset |
+| `JUDGE0_AUTH_HEADER` | Header the key is sent as (`X-Auth-Token` for self-hosted, `X-RapidAPI-Key` for RapidAPI) | `X-Auth-Token` |
+| `JUDGE0_JAVA_LANGUAGE_ID` | Judge0 language id for Java (`91` = JDK 17 on current CE images, `62` = OpenJDK 13) | `91` |
+
+`.env` is **gitignored** — real keys live there, never in the repo. The app loads it at
+startup (real exported environment variables always win), so `./algolab` picks it up
+automatically from the working directory. Remote submissions run on Judge0's Java 17
+image; code that needs a newer language level should be run with a local JDK instead.
+
+## What's in this build
+
+- **Spring Boot backend** serving the static frontend, a file-manager API, and the run
+  pipeline (`JavaExecutionService` → local JDK or Judge0).
 - **Explorer** rooted at the workspace directory: expandable folders, lazy-loaded,
   collapsible & resizable. Notebooks use the `.algolab` extension; legacy `.dsa` files
   are still readable and trigger a one-time offer to rename them.
-- **Editor** — Monaco Editor with Java syntax highlighting, plus a **Vim mode** toggle
-  (Normal / Insert / Visual).
+- **Editor** — Monaco Editor with Java syntax highlighting, live offline linting (the
+  machine's own `javac`), plus a **Vim mode** toggle.
 - **Test cases** — right pane with a tab per case: name, stdin, and an optional
   *Expected output* checkbox that reveals the expected stdout box.
-- **Output pane** — bottom of the screen (from the right edge of the explorer to the
-  right edge of the viewport), with a tab per test case. When expected output is set it
-  shows a green ✓ / red ✗ verdict; stdout/stderr/duration/errors render for every case.
+- **Output pane** — bottom of the screen, with a tab per test case. When expected output
+  is set it shows a green ✓ / red ✗ verdict; stdout/stderr/duration/errors render for
+  every case. Verdicts stream in as each case finishes.
 - **Save / load** — Ctrl/Cmd+S saves the open `.algolab` notebook (human-readable JSON);
   running also saves the file first.
 - **Theme + settings** — a gear menu on the top right holds JDK/Java-level picks, Vim,
-  lint & autocomplete toggles, and 22 editor themes (dark + light) with System-follow.
-
-Run (Ctrl/Cmd+Enter or the ▶ Run button) currently reports that the runner isn't wired
-up yet — JavaRunner + TestCaseRunner are the next milestone.
+  lint & autocomplete toggles, and editor themes (dark + light) with System-follow.
 
 ## Backend API
 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /api/health` | Server status, workspace root |
+| `GET /api/jdks` | Discovered JDKs + active execution mode (`local` / `judge0` / `none`) and Judge0 status |
 | `GET /api/fs/list?path=` | List one directory (relative to root, empty = root) |
 | `GET /api/fs/read?path=` | Read a file's text content |
-| `POST /api/fs/save` | Save a `.dsa` file (`{path, content}`) |
-| `POST /api/run` | Stub (501); contract documented in `RunController` |
+| `POST /api/fs/save` | Save a notebook (`{path, content}`) |
+| `POST /api/run` | Run a notebook; streams one newline-delimited JSON verdict per test case |
+| `POST /api/lint` | Offline javac diagnostics for the editor (`{code, jdk, javaVersion}`) |
 
 All paths are resolved relative to the workspace root; traversal outside the root is
 rejected. The root defaults to the directory the app was started from and can be
-overridden with the `DSA_ROOT` env var (the launcher sets it).
+overridden with the `DSA_ROOT` env var.
 
-## `.dsa` file format
+## `.algolab` file format
 
 ```json
 {
@@ -79,25 +119,52 @@ overridden with the `DSA_ROOT` env var (the launcher sets it).
 ```
 
 `expected: null` means the case has no expected output (the ✓/✗ verdict is skipped).
-A `.dsa` file that isn't valid JSON opens as raw code and is wrapped into the format on
+A `.algolab` file that isn't valid JSON opens as raw code and is wrapped into the format on
 save. No database — the file is the source of truth.
+
+## Building
+
+The normal build produces a plain Spring Boot jar:
+
+```bash
+mvn -q -DskipTests package
+java -jar target/dsa-playground-0.1.0.jar
+```
+
+### Native macOS application
+
+The `algolab` binary is a GraalVM native image of the same app — one self-contained
+executable, no JVM install required. Rebuild it with GraalVM 21+ (its `native-image`
+must be on `PATH` or `GRAALVM_HOME/bin`):
+
+```bash
+mvn -q -DskipTests package
+native-image -jar target/dsa-playground-0.1.0.jar algolab
+```
+
+The binary is a build artifact (gitignored) — regenerate it after code changes. In a
+native build there is no embedded `javac`, so live linting and local execution require a
+separately installed JDK; Judge0 covers execution when none exists.
 
 ## Project layout
 
 ```
-dsa-playground            launcher script
-pom.xml                   Spring Boot 3.5 / Java 21, Maven
-src/main/java/.../        application, FsService, FsController, RunController (stub)
-src/main/resources/static/  index.html + css/ + js/ (Tailwind, Monaco, vanilla JS)
-samples/                  sample .dsa notebooks
+algolab                       native macOS binary (build artifact — see "Native macOS application")
+pom.xml                       Spring Boot 3.5 / Java 21, Maven
+src/main/java/.../execution/  JavaExecutionService + LocalJavaExecutor + Judge0Executor (the run boundary)
+src/main/java/.../service/    JdkManager, FsService, CompileService, .env loading, banner
+src/main/java/.../controller/ REST API (run, jdks, lint, fs, settings)
+src/main/resources/static/    index.html + css/ + js/ (Tailwind, Monaco, vanilla JS)
+.env.example                  committed template for local config (copy to .env; .env is gitignored)
+samples/                      sample .algolab notebooks
 ```
 
 ## Roadmap (in priority order)
 
-1. JdkManager — discover local JDKs (`JAVA_HOME`, `PATH`, `/usr/libexec/java_home -V`)
-2. JavaRunner / TestCaseRunner — temp workspace, compile, pipe stdin, capture
-   stdout/stderr, timeout, compare, structured results
-3. CLI polish (`dsa` on PATH, optional brew formula)
+1. ✅ JdkManager — discover local JDKs (`JAVA_HOME`, `PATH`, `/usr/libexec/java_home -V`)
+2. ✅ JavaExecutionService — local JDK compile/run per test case, streaming verdicts,
+   Judge0 fallback for machines without a JDK
+3. CLI polish (`algolab` on PATH, optional brew formula)
 
 Everything in the project note's "Future ideas — DO NOT BUILD YET" list (visualization,
 other languages, AI, hosting, sharing, ...) stays out until the core loop is useful.

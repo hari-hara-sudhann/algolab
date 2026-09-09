@@ -35,11 +35,11 @@ public final class TerminalColors {
     }
 
     /** Explicit opt-in: when set, colors are always emitted. */
-    public static final boolean FORCE_COLORS = "1".equals(System.getenv("ALGOLAB_FORCE_COLORS"));
+    public static final boolean FORCE_COLORS = "1".equals(Env.get("ALGOLAB_FORCE_COLORS"));
 
     /** Explicit opt-out: when set (any value), colors are never emitted. */
-    public static final boolean NO_COLORS = System.getenv("NO_COLOR") != null
-            || System.getenv("TERM") != null && System.getenv("TERM").equals("dumb");
+    public static final boolean NO_COLORS = Env.get("NO_COLOR") != null
+            || Env.get("TERM") != null && Env.get("TERM").equals("dumb");
 
     public static final boolean SUPPORTS_COLOR = FORCE_COLORS || (!NO_COLORS && TTY);
 

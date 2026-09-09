@@ -5,10 +5,11 @@ import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import com.dsaplayground.execution.ExecOptions;
+import com.dsaplayground.execution.JavaExecutionService;
+import com.dsaplayground.execution.TestCase;
+import com.dsaplayground.execution.TestCaseResult;
 import com.dsaplayground.service.FsService;
-import com.dsaplayground.service.JavaRunner;
-import com.dsaplayground.service.TestCaseRunner.TestCase;
-import com.dsaplayground.service.TestCaseRunner.TestCaseResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,10 +22,12 @@ import org.springframework.web.bind.annotation.RestController;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * Runs Java code against test cases using the JDK and language level chosen in
- * the UI (both fall back to sensible defaults when absent). The response is a
- * stream of newline-delimited JSON (one {@link TestCaseResult} per test case),
- * flushed as each case finishes, so the editor can paint verdicts live.
+ * Runs Java code against test cases. Execution happens locally with a
+ * discovered JDK when one exists, and falls back to Judge0 otherwise — the
+ * controller only asks {@link JavaExecutionService} to run the code and never
+ * knows which mechanism served it. The response is a stream of
+ * newline-delimited JSON (one {@link TestCaseResult} per test case), flushed
+ * as each case finishes, so the editor can paint verdicts live.
  */
 @RestController
 @RequestMapping("/api")
@@ -33,12 +36,12 @@ public class RunController {
     private static final Logger log = LoggerFactory.getLogger(RunController.class);
     private static final MediaType NDJSON = MediaType.parseMediaType("application/x-ndjson");
 
-    private final JavaRunner javaRunner;
+    private final JavaExecutionService executionService;
     private final FsService fs;
     private final ObjectMapper mapper = new ObjectMapper();
 
-    public RunController(JavaRunner javaRunner, FsService fs) {
-        this.javaRunner = javaRunner;
+    public RunController(JavaExecutionService executionService, FsService fs) {
+        this.executionService = executionService;
         this.fs = fs;
     }
 
@@ -87,7 +90,8 @@ public class RunController {
         log.trace("RunController.run(): OutputStreamWriter created (UTF-8)");
         try {
             log.trace("RunController.run(): starting NDJSON stream for {} case(s)", cases.size());
-            javaRunner.runToSink(request.code(), cases, request.jdk(), request.javaVersion(), result -> {
+            executionService.runToSink(request.code(), cases,
+                    ExecOptions.of(request.jdk(), request.javaVersion()), result -> {
                 try {
                     String json = mapper.writeValueAsString(result);
                     log.trace("RunController.run(): verdict for {}: {} (jsonLen={}) -> writing to stream",

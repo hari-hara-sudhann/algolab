@@ -14,7 +14,9 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.dsaplayground.service.JavaRunner.Marker;
+import com.dsaplayground.execution.ExecOptions;
+import com.dsaplayground.execution.LocalJavaExecutor;
+import com.dsaplayground.execution.Marker;
 import com.dsaplayground.service.JdkManager.JdkInstallation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,7 +38,9 @@ import javax.tools.ToolProvider;
  * this app itself runs on, we compile with the in-process compiler API
  * (javax.tools) — ~20-30 ms once warm — and produce markers identical to the
  * subprocess path. For any other chosen JDK we fall back to the spawn-based
- * {@link JavaRunner#lint} so the compile always honours the user's JDK pick.
+ * {@link LocalJavaExecutor#lint} so the compile always honours the user's JDK
+ * pick. With no JDK at all (the Judge0-fallback scenario) linting is skipped
+ * and no markers are returned.
  */
 @Service
 public class CompileService {
@@ -51,14 +55,14 @@ public class CompileService {
             Pattern.compile("class\\s+([A-Za-z0-9_]+)");
 
     private final JdkManager jdkManager;
-    private final JavaRunner javaRunner;
+    private final LocalJavaExecutor localExecutor;
 
     /** Serialises in-process compiles — ToolProvider returns one shared compiler. */
     private final Object compileLock = new Object();
 
-    public CompileService(JdkManager jdkManager, JavaRunner javaRunner) {
+    public CompileService(JdkManager jdkManager, LocalJavaExecutor localExecutor) {
         this.jdkManager = jdkManager;
-        this.javaRunner = javaRunner;
+        this.localExecutor = localExecutor;
     }
 
     /**
@@ -77,7 +81,11 @@ public class CompileService {
             log.trace("CompileService.lint(): code is empty/blank -> empty markers");
             return List.of();
         }
-        JdkInstallation jdk = jdkManager.requireInstallation(jdkHome);
+        JdkInstallation jdk = jdkManager.requireInstallation(jdkHome).orElse(null);
+        if (jdk == null) {
+            log.debug("CompileService.lint(): no JDK available — returning no markers (Judge0 fallback mode)");
+            return List.of();
+        }
         log.trace("CompileService.lint(): resolved JDK: name='{}' version={} home={} javaBin={} javacBin={}",
                 jdk.name(), jdk.version(), jdk.home(), jdk.javaBinary(), jdk.javacBinary());
         boolean inProcessPossible = canCompileInProcess(jdk);
@@ -103,8 +111,8 @@ public class CompileService {
         } else {
             log.trace("CompileService.lint(): in-process not possible; using javac subprocess");
         }
-        log.trace("CompileService.lint(): delegating to JavaRunner.lint");
-        List<Marker> markers = javaRunner.lint(code, jdkHome, release);
+        log.trace("CompileService.lint(): delegating to LocalJavaExecutor.lint");
+        List<Marker> markers = localExecutor.lint(code, ExecOptions.of(jdkHome, release));
         log.trace("CompileService.lint() EXIT: {} markers (elapsed {} ms)",
                 markers.size(), (System.nanoTime() - start) / 1_000_000);
         return markers;
@@ -183,7 +191,7 @@ public class CompileService {
         }
     }
 
-    /** javac command-line options, mirroring {@link JavaRunner#compileArgs} minus the binary. */
+    /** javac command-line options, mirroring {@link LocalJavaExecutor}'s compile args minus the binary. */
     private List<String> optionsFor(Integer release) {
         log.trace("CompileService.optionsFor(release={}) ENTRY", release);
         List<String> options = new ArrayList<>();

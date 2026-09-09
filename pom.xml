@@ -47,4 +47,52 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      Native macOS build: mvn -Pnative package  →  native executable `algolab`
+      (requires GraalVM 21+ with native-image on PATH or GRAALVM_HOME).
+      The process-aot execution runs Spring's Ahead-Of-Time engine (reflection
+      hints such as @RegisterReflectionForBinding, controller return types),
+      and native:compile-no-fork produces the image during `package`.
+    -->
+    <profile>
+      <id>native</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>process-aot</id>
+                <goals>
+                  <goal>process-aot</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.graalvm.buildtools</groupId>
+            <artifactId>native-maven-plugin</artifactId>
+            <configuration>
+              <imageName>algolab</imageName>
+              <buildArgs>
+                <buildArg>-H:+ReportExceptionStackTraces</buildArg>
+              </buildArgs>
+            </configuration>
+            <executions>
+              <execution>
+                <id>build-native</id>
+                <goals>
+                  <goal>compile-no-fork</goal>
+                </goals>
+                <phase>package</phase>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

@@ -29,6 +29,9 @@
     jdks: [],          // [{ home, version, name, versionLine, levels }]
     jdkHome: null,
 
+    // Where Java actually runs: 'local' | 'judge0' | 'none' (from /api/jdks).
+    execution: { mode: 'none', modeLabel: '', judge0: { configured: false, url: '' } },
+
     loading: false,    // true while programmatically setting editor value
 
     editor: null,
@@ -743,6 +746,11 @@
       return;
     }
     state.jdks = data.jdks || [];
+    state.execution = {
+      mode: data.mode || 'none',
+      modeLabel: data.modeLabel || '',
+      judge0: (data.judge0 && typeof data.judge0 === 'object') ? data.judge0 : { configured: false, url: '' },
+    };
     const def = data.default;
     const saved = localStorage.getItem(LS_JDK);
     const picked =
@@ -751,11 +759,51 @@
       state.jdks[0] ||
       null;
     renderJdkSelect(picked);
+    renderExecMode();
+  }
+
+  /**
+   * Small status-badge showing where Java runs. Purely informational — the
+   * app prefers the local JDK and only uses Judge0 when none exists.
+   */
+  function renderExecMode() {
+    const badge = $('#exec-mode');
+    if (!badge) return;
+    const m = state.execution.mode;
+    let cls, label, title;
+    if (m === 'local') {
+      cls = 'text-emerald-400';
+      label = 'Local JDK';
+      title = 'Running Java with a JDK found on this machine';
+    } else if (m === 'judge0') {
+      cls = 'text-amber-400';
+      label = 'Judge0 (remote)';
+      title = 'No local JDK — running via Judge0 at ' + (state.execution.judge0.url || '');
+    } else {
+      cls = 'text-red-400';
+      label = 'No executor';
+      title = 'No JDK found and Judge0 not configured — install a JDK or set JUDGE0_API_URL';
+    }
+    badge.className = 'font-mono ' + cls;
+    badge.textContent = '● ' + label;
+    badge.title = title;
+    badge.classList.remove('hidden');
   }
 
   function renderJdkSelect(picked) {
     const sel = $('#jdk-select');
     sel.innerHTML = '';
+    if (!state.jdks.length) {
+      // No local JDK: remote (Judge0) execution is what runs the code.
+      const opt = el('option');
+      opt.disabled = true;
+      opt.textContent = 'No JDK found — running via Judge0';
+      sel.appendChild(opt);
+      state.jdkHome = null;
+      sel.value = '';
+      renderLevelSelect();
+      return;
+    }
     for (const jdk of state.jdks) {
       const opt = el('option');
       opt.value = jdk.home;
@@ -779,8 +827,19 @@
   function renderLevelSelect() {
     const sel = $('#java-level-select');
     const jdk = currentJdk();
-    const levels = (jdk && jdk.levels) || [];
+    // Judge0 images run Java 17 — without a local JDK that's the only level
+    // worth offering; it's stored in the notebook like any other.
+    const levels = (jdk && jdk.levels) ||
+      (state.execution.mode === 'judge0' ? [17] : []);
     sel.innerHTML = '';
+    if (!levels.length) {
+      const opt = el('option');
+      opt.disabled = true;
+      opt.textContent = '—';
+      sel.appendChild(opt);
+      sel.value = '';
+      return;
+    }
     for (const level of levels) {
       const opt = el('option');
       opt.value = String(level);
@@ -806,19 +865,23 @@
   function alignDocLevel(doc) {
     if (!doc) return;
     const jdk = currentJdk();
-    if (!jdk || !jdk.levels) return;
+    // With no local JDK the remote (Judge0) Java-17 default is what runs.
+    const levels = (jdk && jdk.levels && jdk.levels.length)
+      ? jdk.levels
+      : (state.execution.mode === 'judge0' ? [17] : []);
+    if (!levels.length) return;
     if (doc.meta.javaVersion == null) {
-      doc.meta.javaVersion = jdk.levels[0] || null; // adopt the JDK default silently
+      doc.meta.javaVersion = levels[0] || null; // adopt the default silently
       return;
     }
-    if (!jdk.levels.includes(doc.meta.javaVersion)) {
+    if (!levels.includes(doc.meta.javaVersion)) {
       const before = doc.meta.javaVersion;
-      doc.meta.javaVersion = jdk.levels[0] || null;
+      doc.meta.javaVersion = levels[0] || null;
       if (!doc.dirty && doc.code) {
         doc.dirty = true;
         updateDirty();
         renderFileTabs();
-        toast(`Java ${before} not available on this JDK — using Java ${doc.meta.javaVersion}`);
+        toast(`Java ${before} not available — using Java ${doc.meta.javaVersion}`);
       }
     }
   }

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.dsaplayground.service.Env;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -32,7 +33,7 @@ public class SettingsController {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private static Path settingsPath() {
-        String override = System.getenv("ALGOLAB_SETTINGS");
+        String override = Env.get("ALGOLAB_SETTINGS");
         if (override != null && !override.isBlank()) {
             return Path.of(override).toAbsolutePath();
         }
