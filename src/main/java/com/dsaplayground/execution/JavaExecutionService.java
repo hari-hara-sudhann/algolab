@@ -59,7 +59,7 @@ public class JavaExecutionService {
         return judge0.isAvailable();
     }
 
-    /** Judge0 base URL for status display (never exposes the credential). */
+    /** Judge0 base URL for status display. */
     public String judge0Url() {
         return judge0.config().apiUrl();
     }

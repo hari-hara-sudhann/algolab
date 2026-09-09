@@ -30,13 +30,14 @@ import org.springframework.stereotype.Service;
  *
  * <p>Configuration comes from the environment (see {@code .env.example}):
  * <ul>
- *   <li>{@code JUDGE0_API_URL} — base URL, defaults to {@code https://ce.judge0.com}</li>
- *   <li>{@code JUDGE0_API_KEY} — optional credential (blank = no auth header)</li>
- *   <li>{@code JUDGE0_AUTH_HEADER} — header the key is sent as, default {@code X-Auth-Token}
- *       (self-hosted Judge0); set to {@code X-RapidAPI-Key} for the RapidAPI host</li>
+ *   <li>{@code JUDGE0_API_URL} — base URL, defaults to {@code https://ce.judge0.com}
+ *       (the unauthenticated Judge0 Cloud preview)</li>
  *   <li>{@code JUDGE0_JAVA_LANGUAGE_ID} — Judge0 language id for Java, default
  *       {@code 91} (Java JDK 17 on current CE images)</li>
  * </ul>
+ *
+ * <p>The Judge0 Cloud preview needs no authentication, so no credential is
+ * ever configured or sent.
  *
  * <p>Judge0 compiles submissions as {@code Main.java}, so source whose public
  * class has any other name is adapted (class renamed to {@code Main} with
@@ -72,12 +73,12 @@ public class Judge0Executor implements JavaExecutor {
     public Judge0Executor() {
         this.config = Judge0Config.fromEnv();
         this.http = HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
-        log.info("Judge0 executor configured: url={} auth={} languageId={}",
-                config.apiUrl(), config.apiKey().isBlank() ? "none" : config.authHeader(), config.languageId());
+        log.info("Judge0 executor configured: url={} languageId={}",
+                config.apiUrl(), config.languageId());
     }
 
     /** Immutable Judge0 configuration resolved from the environment. */
-    public record Judge0Config(String apiUrl, String apiKey, String authHeader, int languageId) {
+    public record Judge0Config(String apiUrl, int languageId) {
 
         static Judge0Config fromEnv() {
             String url = Env.get("JUDGE0_API_URL");
@@ -86,11 +87,6 @@ public class Judge0Executor implements JavaExecutor {
             }
             while (url.endsWith("/")) {
                 url = url.substring(0, url.length() - 1);
-            }
-            String key = Env.get("JUDGE0_API_KEY");
-            String header = Env.get("JUDGE0_AUTH_HEADER");
-            if (header == null || header.isBlank()) {
-                header = "X-Auth-Token";
             }
             int languageId = DEFAULT_JAVA_LANGUAGE_ID;
             String rawId = Env.get("JUDGE0_JAVA_LANGUAGE_ID");
@@ -101,7 +97,7 @@ public class Judge0Executor implements JavaExecutor {
                     log.warn("Judge0Config: ignoring non-numeric JUDGE0_JAVA_LANGUAGE_ID '{}'", rawId);
                 }
             }
-            return new Judge0Config(url, key == null ? "" : key, header, languageId);
+            return new Judge0Config(url, languageId);
         }
     }
 
@@ -120,7 +116,7 @@ public class Judge0Executor implements JavaExecutor {
         return config.apiUrl() != null && !config.apiUrl().isBlank();
     }
 
-    /** Config exposure for status text (URL only — never the credential). */
+    /** Config exposure for status text (URL only). */
     public Judge0Config config() {
         return config;
     }
@@ -167,7 +163,6 @@ public class Judge0Executor implements JavaExecutor {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(config.apiUrl() + "/submissions/batch?base64_encoded=false&wait=false"))
                 .header("Content-Type", "application/json")
-                .headers(authHeaders())
                 .timeout(Duration.ofSeconds(30))
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
                 .build();
@@ -233,7 +228,6 @@ public class Judge0Executor implements JavaExecutor {
         String joined = String.join(",", tokens);
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(config.apiUrl() + "/submissions/batch?tokens=" + joined + "&base64_encoded=false"))
-                .headers(authHeaders())
                 .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
@@ -244,13 +238,6 @@ public class Judge0Executor implements JavaExecutor {
         }
         JsonNode root = mapper.readTree(response.body());
         return root.isArray() ? root : root.path("submissions");
-    }
-
-    private String[] authHeaders() {
-        if (config.apiKey().isBlank()) {
-            return new String[0];
-        }
-        return new String[]{config.authHeader(), config.apiKey()};
     }
 
     /* ---------------- result mapping ---------------- */

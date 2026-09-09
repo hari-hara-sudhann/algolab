@@ -35,10 +35,11 @@ your machine (offline, private, instant), and treats that as the normal case.
   machine's own `javac` (honouring the `--release` level chosen in the UI) and run as a
   local subprocess with stdin piped in — fully offline.
 - **Judge0 fallback.** Only when *no* usable local JDK exists does the app fall back to
-  the [Judge0](https://judge0.com) API, so users without a JDK can still run Java. All
-  Judge0 details (batch submission, polling, the `Main.java` class-name requirement) are
-  isolated in `Judge0Executor` — the rest of the app just asks to "run Java" and receives
-  structured results.
+  the [Judge0 Cloud preview](https://ce.judge0.com) — the official, unauthenticated
+  Judge0 service — so users without a JDK can still run Java. No API key or credential
+  is required, configured, or sent. All Judge0 details (batch submission, polling, the
+  `Main.java` class-name requirement) are isolated in `Judge0Executor` — the rest of the
+  app just asks to "run Java" and receives structured results.
 
 The two mechanisms are interchangeable behind `JavaExecutionService`; the UI shows a
 small status-badge (Local JDK / Judge0 / No executor) so it's always clear where code
@@ -46,7 +47,10 @@ ran, without making execution mode a feature you have to care about.
 
 ### Judge0 configuration
 
-Copy the template and fill in values — see [`.env.example`](.env.example):
+The fallback uses the official **unauthenticated Judge0 Cloud preview**
+(`https://ce.judge0.com`) — nothing to sign up for, no API key. The two
+variables below are optional overrides; defaults work out of the box. See
+[`.env.example`](.env.example):
 
 ```bash
 cp .env.example .env
@@ -54,15 +58,13 @@ cp .env.example .env
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `JUDGE0_API_URL` | Judge0 base URL (`https://ce.judge0.com` public CE, or a self-hosted instance) | `https://ce.judge0.com` |
-| `JUDGE0_API_KEY` | Optional credential; blank = no auth header | unset |
-| `JUDGE0_AUTH_HEADER` | Header the key is sent as (`X-Auth-Token` for self-hosted, `X-RapidAPI-Key` for RapidAPI) | `X-Auth-Token` |
+| `JUDGE0_API_URL` | Judge0 base URL (Cloud preview, or a self-hosted instance) | `https://ce.judge0.com` |
 | `JUDGE0_JAVA_LANGUAGE_ID` | Judge0 language id for Java (`91` = JDK 17 on current CE images, `62` = OpenJDK 13) | `91` |
 
-`.env` is **gitignored** — real keys live there, never in the repo. The app loads it at
-startup (real exported environment variables always win), so `./algolab` picks it up
-automatically from the working directory. Remote submissions run on Judge0's Java 17
-image; code that needs a newer language level should be run with a local JDK instead.
+The app loads `.env` at startup (real exported environment variables always
+win), so `./algolab` picks it up automatically from the working directory.
+Remote submissions run on Judge0's Java 17 image; code that needs a newer
+language level should be run with a local JDK instead.
 
 ## What's in this build
 
