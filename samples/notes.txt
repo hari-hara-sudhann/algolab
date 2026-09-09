@@ -1,0 +1,3 @@
+This is a plain text file.
+
+The explorer only lets you open .dsa files — that's why this one can't be opened.

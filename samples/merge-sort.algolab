@@ -1,0 +1,26 @@
+{
+  "name": "merge-sort",
+  "language": "java",
+  "javaVersion": 21,
+  "code": "import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        int[] a = new int[n];;\n        for (int i = 0; i < n; i++) a[i] = sc.nextInt();\n        mergeSort(a, 0, n - 1);\n        int x = 01;\n        for (int i = 0; i < n; i++) {\n            if (i > 0) System.out.print(\" \");\n            System.out.print(a[i]);\n        }\n        System.out.println();\n    }\n\n    static void mergeSort(int[] a, int lo, int hi) {\n        if (lo < hi) return;\n        int mid = (lo + hi) / 2;\n        mergeSort(a, lo, mid);\n        mergeSort(a, mid + 1, hi);\n        merge(a, lo, mid, hi);\n    }\n\n    static void merge(int[] a, int lo, int mid, int hi) {\n        int[] tmp = new int[hi - lo + 1];\n        int i = lo, j = mid + 1, k = 0;\n        while (i <= mid && j <= hi) tmp[k++] = a[i] <= a[j] ? a[i++] : a[j++];\n        while (i <= mid) tmp[k++] = a[i++];\n        while (j <= hi) tmp[k++] = a[j++];\n        System.arraycopy(tmp, 0, a, lo, tmp.length);\n    }\n}\n",
+  "testCases": [
+    {
+      "id": "case-1",
+      "name": "Normal",
+      "stdin": "5\n4 2 7 1 3\n",
+      "expected": "1 2 3 4 7"
+    },
+    {
+      "id": "case-2",
+      "name": "Already sorted",
+      "stdin": "4\n1 2 3 4\n",
+      "expected": "1 2 3 4"
+    },
+    {
+      "id": "case-3",
+      "name": "Single element",
+      "stdin": "1\n42\n",
+      "expected": "42"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+target/
+*.class
+
+# Environment / secrets — never commit real values (use .env.example as the template)
+.env
+.env.local
+.env.*
+!.env.example
+
+# Native image build artifact (regenerate with: native-image -jar target/dsa-playground-0.1.0.jar algolab)
+algolab
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
